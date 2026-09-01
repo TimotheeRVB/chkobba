@@ -1,17 +1,25 @@
 {
   "expo": {
-    "name": "chkobba-app",
-    "slug": "chkobba-app",
+    "name": "Chkobba",
+    "slug": "chkobba",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#11554d",
+    "splash": {
+      "backgroundColor": "#11554d",
+      "resizeMode": "contain",
+      "image": "./assets/icon.png"
+    },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.timotheervb.chkobba"
     },
     "android": {
+      "package": "com.timotheervb.chkobba",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#11554d",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -20,6 +28,11 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "287e8a7e-5864-411a-95d1-ed280253eea7"
+      }
     }
   }
 }
