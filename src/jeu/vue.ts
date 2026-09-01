@@ -11,9 +11,47 @@
  * pas savoir.
  */
 
-import type { Carte } from './cartes';
-import { type Etat, type Joueur, autre } from './etat';
+import { type Carte, memeCarte } from './cartes';
+import { type Etat, type Joueur, autre, donneTerminee } from './etat';
 import type { Coup } from './regles';
+
+/** Le ramassage des cartes restées sur le tapis en fin de donne. */
+export type Balayage = {
+  readonly joueur: Joueur;
+  readonly cartes: readonly Carte[];
+};
+
+/** Ce qui vient d'être joué, tel qu'on l'annonce aux deux joueurs. */
+export type CoupAnnonce = {
+  readonly joueur: Joueur;
+  readonly carte: Carte;
+  readonly prise: readonly Carte[];
+  /** Présent uniquement sur le dernier coup d'une donne. */
+  readonly balayage?: Balayage;
+};
+
+/**
+ * Les cartes que le dernier ramasseur emporte en fin de donne.
+ *
+ * Ce ramassage a lieu à l'intérieur d'appliquerCoup, donc l'état d'arrivée ne
+ * porte plus trace de ce qui a été balayé ni d'où ça venait. On le reconstitue
+ * ici, en comparant le tapis d'avant au coup joué.
+ */
+export function balayageFinal(
+  avant: Etat,
+  coup: Coup,
+  apres: Etat,
+): Balayage | null {
+  if (!donneTerminee(apres) || apres.dernierRamasseur === null) return null;
+
+  const cartes = [
+    ...avant.table.filter((c) => !coup.prise.some((p) => memeCarte(p, c))),
+    // Une carte simplement posée reste sur le tapis et part avec le reste.
+    ...(coup.prise.length === 0 ? [coup.carte] : []),
+  ];
+
+  return cartes.length > 0 ? { joueur: apres.dernierRamasseur, cartes } : null;
+}
 
 export type Vue = {
   /** Qui regarde. */
@@ -38,19 +76,11 @@ export type Vue = {
   readonly aMoiDeJouer: boolean;
 
   /** Le coup précédent, pour l'afficher. Absent au tout début d'une donne. */
-  readonly dernierCoup?: {
-    readonly joueur: Joueur;
-    readonly carte: Carte;
-    readonly prise: readonly Carte[];
-  };
+  readonly dernierCoup?: CoupAnnonce;
 };
 
 /** Construit ce que le joueur donné a le droit de voir. */
-export function vuePour(
-  etat: Etat,
-  moi: Joueur,
-  dernierCoup?: { joueur: Joueur; carte: Carte; prise: readonly Carte[] },
-): Vue {
+export function vuePour(etat: Etat, moi: Joueur, dernierCoup?: CoupAnnonce): Vue {
   const lui = autre(moi);
 
   return {

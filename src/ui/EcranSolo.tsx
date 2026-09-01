@@ -19,6 +19,8 @@ import {
   nouvellePartie,
   vainqueur,
   vuePour,
+  balayageFinal,
+  type CoupAnnonce,
 } from '../jeu';
 
 import { Tapis } from './Tapis';
@@ -41,31 +43,36 @@ export default function EcranSolo({
 }) {
   const [etat, setEtat] = useState<Etat>(() => nouvellePartie());
   const [decompte, setDecompte] = useState<Decompte | null>(null);
-  const [dernier, setDernier] = useState<Coup & { joueur: 0 | 1 } | null>(null);
+  const [dernier, setDernier] = useState<CoupAnnonce | null>(null);
 
-  const vue = useMemo(
-    () =>
-      vuePour(
-        etat,
-        VOUS,
-        dernier ? { joueur: dernier.joueur, carte: dernier.carte, prise: dernier.prise } : undefined,
-      ),
-    [etat, dernier],
-  );
+  const vue = useMemo(() => vuePour(etat, VOUS, dernier ?? undefined), [etat, dernier]);
+
+  /** Joue un coup et note ce qu'il faut annoncer à l'affichage. */
+  const avancer = (coup: Coup, joueur: 0 | 1) => {
+    const suivant = appliquerCoup(etat, coup);
+    const balayage = balayageFinal(etat, coup, suivant);
+    setDernier({
+      joueur,
+      carte: coup.carte,
+      prise: coup.prise,
+      ...(balayage ? { balayage } : {}),
+    });
+    setEtat(suivant);
+  };
 
   useEffect(() => {
     if (decompte || etat.joueurCourant !== ORDI || donneTerminee(etat)) return;
     const minuteur = setTimeout(() => {
-      const coup = choisirCoup(etat);
-      setDernier({ ...coup, joueur: ORDI });
-      setEtat(appliquerCoup(etat, coup));
-    }, 800);
+      avancer(choisirCoup(etat), ORDI);
+      // Laisse la séquence d'animation du coup précédent se terminer.
+    }, 900);
     return () => clearTimeout(minuteur);
   }, [etat, decompte]);
 
   useEffect(() => {
     if (donneTerminee(etat) && !decompte) {
-      const minuteur = setTimeout(() => setDecompte(compterDonne(etat)), 500);
+      // Assez long pour laisser le ramassage de la dernière carte s'achever.
+      const minuteur = setTimeout(() => setDecompte(compterDonne(etat)), 2000);
       return () => clearTimeout(minuteur);
     }
   }, [etat, decompte]);
@@ -111,11 +118,9 @@ export default function EcranSolo({
       vue={vue}
       theme={theme}
       onTheme={onTheme}
-      onJouer={(coup) => {
-        setDernier({ ...coup, joueur: VOUS });
-        setEtat(appliquerCoup(etat, coup));
-      }}
+      onJouer={(coup) => avancer(coup, VOUS)}
       legendeAdversaire="Ordinateur"
+      nomJoueur="Vous"
     />
   );
 }

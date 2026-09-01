@@ -21,7 +21,7 @@ import {
 import { type Coup, coupsPour } from './regles';
 import { appliquerCoup, estCoupLegal } from './partie';
 import { type Decompte, compterDonne, ajouterAuScore, vainqueur } from './decompte';
-import { type Vue, vuePour } from './vue';
+import { type CoupAnnonce, type Vue, balayageFinal, vuePour } from './vue';
 
 export type Partie = {
   readonly etat: Etat;
@@ -53,10 +53,7 @@ export function ouvrirPartie(graine?: number): Partie {
 }
 
 /** Les deux vues correspondant à un état, avec le dernier coup joué. */
-function vues(
-  etat: Etat,
-  dernier?: { joueur: Joueur; carte: import('./cartes').Carte; prise: readonly import('./cartes').Carte[] },
-): [Vue, Vue] {
+function vues(etat: Etat, dernier?: CoupAnnonce): [Vue, Vue] {
   return [vuePour(etat, 0, dernier), vuePour(etat, 1, dernier)];
 }
 
@@ -93,7 +90,13 @@ export function recevoirCoup(
   let etat = appliquerCoup(partie.etat, coup);
   verifierIntegrite(etat);
 
-  const dernier = { joueur, carte: coup.carte, prise: coup.prise };
+  const balayage = balayageFinal(partie.etat, coup, etat);
+  const dernier: CoupAnnonce = {
+    joueur,
+    carte: coup.carte,
+    prise: coup.prise,
+    ...(balayage ? { balayage } : {}),
+  };
 
   if (!donneTerminee(etat)) {
     return {

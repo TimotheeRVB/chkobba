@@ -6,7 +6,7 @@
  * aussitôt la vue véritable : l'affichage se recale tout seul.
  */
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text } from 'react-native';
 
 import { usePartieEnLigne } from '../reseau/connexion';
@@ -42,6 +42,16 @@ const PISTES = [
 export default function EcranEnLigne({ adresse, code, theme, onTheme, onQuitter }: Props) {
   const { vue, decompte, gagnant, statut, refus, detail, tentatives, secondes, automatique, abandon, jouer } =
     usePartieEnLigne(adresse, code);
+
+  // Le décompte arrive avec le dernier coup de la donne : on le retient le
+  // temps que l'animation de ramassage se termine.
+  const [decompteMontre, setDecompteMontre] = useState(false);
+
+  useEffect(() => {
+    if (!decompte) return setDecompteMontre(false);
+    const minuteur = setTimeout(() => setDecompteMontre(true), 2000);
+    return () => clearTimeout(minuteur);
+  }, [decompte]);
 
   if (statut === 'complet') {
     return (
@@ -120,7 +130,7 @@ export default function EcranEnLigne({ adresse, code, theme, onTheme, onQuitter 
 
   // Le décompte reste affiché tant que le serveur n'a pas envoyé la donne
   // suivante : les deux joueurs le voient en même temps.
-  if (decompte) {
+  if (decompte && decompteMontre) {
     return (
       <FeuilleDecompte
         decompte={decompte}
@@ -138,7 +148,8 @@ export default function EcranEnLigne({ adresse, code, theme, onTheme, onQuitter 
         theme={theme}
         onTheme={onTheme}
         onJouer={jouer}
-        legendeAdversaire={statut === 'adversaireParti' ? 'Adversaire déconnecté' : 'Adversaire'}
+        legendeAdversaire={statut === 'adversaireParti' ? 'Déconnecté' : 'Adversaire'}
+        nomJoueur="Vous"
         gele={statut !== 'jeu'}
         secondes={secondes}
       />
