@@ -9,7 +9,16 @@
  */
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Animated,
+  Image,
+  type LayoutChangeEvent,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 
 import { type Carte, type Coup, type Vue, coupsPour, prisesPossibles } from '../jeu';
 import { CarteVue, DosDeCarte, nomCarte, type NomTheme } from './Carte';
@@ -35,13 +44,22 @@ const REVELATION_MS = 320;
 const PAUSE_MS = 340;
 const RAMASSAGE_MS = 420;
 const BALAYAGE_MS = 460;
+const DEPOT_MS = 300;
+
+/** Gabarit d'une carte, en dur : il sert au calcul des trajets. */
+const HAUTEUR_CARTE = 90;
+const LARGEUR_CARTE = 62;
+/** Écart entre le bord de la zone de jeu et la carte révélée. */
+const MARGE_REVELATION = 96;
+/** Décalage de la carte qui vient se poser sur sa prise. */
+const CHEVAUCHEMENT = 24;
 
 type Sequence = {
   joueur: 0 | 1;
   carte: Carte;
   prise: readonly Carte[];
   balayage?: { joueur: 0 | 1; cartes: readonly Carte[] };
-  phase: 'revelation' | 'ramassage' | 'balayage';
+  phase: 'revelation' | 'depot' | 'ramassage' | 'balayage';
 };
 
 /**
@@ -118,6 +136,7 @@ function useSequence(
 ): {
   sequence: Sequence | null;
   apparition: Animated.Value;
+  depot: Animated.Value;
   ramassage: Animated.Value;
   balayage: Animated.Value;
 } {
@@ -125,6 +144,7 @@ function useSequence(
   const apparition = useRef(new Animated.Value(0)).current;
   const ramassage = useRef(new Animated.Value(0)).current;
   const balayage = useRef(new Animated.Value(0)).current;
+  const depot = useRef(new Animated.Value(0)).current;
   const traitee = useRef<string | null>(null);
 
   // Une signature textuelle : l'objet change d'identité à chaque message,
@@ -145,74 +165,98 @@ function useSequence(
    */
   if (signature !== traitee.current) {
     traitee.current = signature;
-    apparition.setValue(0);
+    const sien = dernierCoup?.joueur === moi;
+
+    // Sa propre carte n'a pas à être révélée : on la montre déjà retournée,
+    // en fixant l'avancement du retournement à son terme. Elle part ensuite
+    // vers le tapis comme celle de l'adversaire.
+    apparition.setValue(sien ? 1 : 0);
+    depot.setValue(0);
     ramassage.setValue(0);
-    // Inutile de révéler au joueur une carte qu'il vient de choisir : on
-    // passe directement au ramassage pour son propre coup.
+    balayage.setValue(0);
+
     setSequence(
       dernierCoup
-        ? {
-            ...dernierCoup,
-            phase: dernierCoup.joueur === moi ? 'ramassage' : 'revelation',
-          }
+        ? { ...dernierCoup, phase: sien ? 'depot' : 'revelation' }
         : null,
     );
   }
 
+  /**
+   * Chaque phase est jouée par un effet, et non dans la fonction de rappel de
+   * la précédente.
+   *
+   * C'est indispensable : passer à la phase suivante déclenche un rendu, et
+   * l'animation doit démarrer une fois ce rendu affiché. Lancée trop tôt, elle
+   * s'applique à une vue qui ne porte pas encore la transformation — et le
+   * pilote natif n'anime rien. C'est ce qui faisait que seule la première
+   * carte se déplaçait.
+   */
   useEffect(() => {
-    if (!dernierCoup || !signature) return;
+    if (!sequence) return;
 
-    const { prise, joueur } = dernierCoup;
+    const { phase, prise, balayage: bal } = sequence;
+    const avancer = (suivante: Sequence['phase']) =>
+      setSequence((s) => (s ? { ...s, phase: suivante } : null));
+    const terminer = () => setSequence(null);
 
-    // Fin de donne : le dernier ramasseur emporte ce qui reste sur le tapis.
-    const balayer = () => {
-      if (!dernierCoup.balayage) return setSequence(null);
-      setSequence((s) => (s ? { ...s, phase: 'balayage' } : null));
-      Animated.timing(balayage, {
-        toValue: 1,
-        duration: BALAYAGE_MS,
-        useNativeDriver: true,
-      }).start(({ finished }) => {
-        if (finished) setSequence(null);
-      });
+    const apresLeDepot = () => {
+      if (prise.length > 0) return avancer('ramassage');
+      if (bal) return avancer('balayage');
+      terminer();
     };
 
-    const emporter = () => {
-      if (prise.length === 0) return balayer();
-      setSequence((s) => (s ? { ...s, phase: 'ramassage' } : null));
-      Animated.timing(ramassage, {
-        toValue: 1,
-        duration: RAMASSAGE_MS,
-        useNativeDriver: true,
-      }).start(({ finished }) => {
-        if (finished) balayer();
-      });
-    };
+    let animation: Animated.CompositeAnimation;
 
-    // Son propre coup : pas de révélation, on enchaîne.
-    if (joueur === moi) {
-      emporter();
-      return;
+    switch (phase) {
+      case 'revelation':
+        animation = Animated.sequence([
+          Animated.timing(apparition, {
+            toValue: 1,
+            duration: REVELATION_MS,
+            useNativeDriver: true,
+          }),
+          Animated.delay(PAUSE_MS),
+        ]);
+        animation.start(({ finished }) => finished && avancer('depot'));
+        break;
+
+      case 'depot':
+        animation = Animated.timing(depot, {
+          toValue: 1,
+          duration: DEPOT_MS,
+          useNativeDriver: true,
+        });
+        animation.start(({ finished }) => finished && apresLeDepot());
+        break;
+
+      case 'ramassage':
+        animation = Animated.timing(ramassage, {
+          toValue: 1,
+          duration: RAMASSAGE_MS,
+          useNativeDriver: true,
+        });
+        animation.start(({ finished }) => {
+          if (!finished) return;
+          bal ? avancer('balayage') : terminer();
+        });
+        break;
+
+      case 'balayage':
+        animation = Animated.timing(balayage, {
+          toValue: 1,
+          duration: BALAYAGE_MS,
+          useNativeDriver: true,
+        });
+        animation.start(({ finished }) => finished && terminer());
+        break;
     }
 
-    const revelation = Animated.sequence([
-      Animated.timing(apparition, {
-        toValue: 1,
-        duration: REVELATION_MS,
-        useNativeDriver: true,
-      }),
-      Animated.delay(PAUSE_MS),
-    ]);
-
-    revelation.start(({ finished }) => {
-      if (finished) emporter();
-    });
-
-    return () => revelation.stop();
+    return () => animation.stop();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [signature]);
+  }, [signature, sequence?.phase]);
 
-  return { sequence, apparition, ramassage, balayage };
+  return { sequence, apparition, depot, ramassage, balayage };
 }
 
 type Props = {
@@ -259,7 +303,8 @@ export function Tapis({
 
   const actif = vue.aMoiDeJouer && !gele;
 
-  const { sequence, apparition, ramassage, balayage } = useSequence(vue.dernierCoup, moi);
+  const { sequence, apparition, depot, ramassage, balayage } =
+    useSequence(vue.dernierCoup, moi);
 
   /**
    * Les cartes montrées sur le tapis.
@@ -295,6 +340,12 @@ export function Tapis({
   const mainAvant = useRef<readonly Carte[]>(vue.maMain);
   const adversaireAvant = useRef<number>(vue.cartesAdversaire);
 
+  // Le compteur des paquets attend que les cartes soient arrivées.
+  const ramasseesAvant = useRef<Record<number, number>>({
+    [moi]: vue.mesRamassees.length,
+    [lui]: vue.ramasseesAdversaire,
+  });
+
   const mainAffichee = sequence
     ? vue.maMain.filter((c) => mainAvant.current.some((d) => memeCarte(c, d)))
     : vue.maMain;
@@ -321,10 +372,177 @@ export function Tapis({
     if (sequence) return;
     mainAvant.current = vue.maMain;
     adversaireAvant.current = vue.cartesAdversaire;
-  }, [sequence, vue.maMain, vue.cartesAdversaire]);
+    ramasseesAvant.current = {
+      [moi]: vue.mesRamassees.length,
+      [lui]: vue.ramasseesAdversaire,
+    };
+  }, [
+    sequence,
+    vue.maMain,
+    vue.cartesAdversaire,
+    vue.mesRamassees.length,
+    vue.ramasseesAdversaire,
+    moi,
+    lui,
+  ]);
+
+  /**
+   * Deux mesures suffisent à calculer le trajet de la carte vers le tapis :
+   * la hauteur de la zone de jeu, et la position du tapis dedans. Elles
+   * arrivent par onLayout, donc sans supposition sur la taille de l'écran.
+   */
+  const [zone, setZone] = useState({ largeur: 0, hauteur: 0 });
+  const [tapis, setTapis] = useState({ x: 0, y: 0, hauteur: 0 });
+  const [rangee, setRangee] = useState({ x: 0, y: 0 });
+  const [places, setPlaces] = useState<Record<number, { x: number; y: number }>>({});
+  const [cibles, setCibles] = useState<Record<number, { x: number; y: number }>>({});
+
+  const [zoneMain, setZoneMain] = useState({ x: 0, y: 0 });
+  const [placesMain, setPlacesMain] = useState<Record<number, { x: number; y: number }>>({});
+
+  const noterPlaceMain = (i: number) => (e: LayoutChangeEvent) => {
+    const { x, y } = e.nativeEvent.layout;
+    setPlacesMain((p) => (p[i]?.x === x && p[i]?.y === y ? p : { ...p, [i]: { x, y } }));
+  };
+
+  const noterCible = (joueur: 0 | 1) => (position: { x: number; y: number }) =>
+    setCibles((c) =>
+      c[joueur]?.x === position.x && c[joueur]?.y === position.y
+        ? c
+        : { ...c, [joueur]: position },
+    );
+
+  /**
+   * Position de chaque emplacement, relevée à la mise en page.
+   *
+   * Les huit emplacements sont rendus en permanence, occupés ou non : leurs
+   * coordonnées sont donc connues bien avant qu'une carte n'y soit envoyée.
+   * On ne remplace la valeur que si elle a réellement changé, sinon chaque
+   * mesure déclencherait un nouveau rendu, qui déclencherait une mesure.
+   */
+  const noterPlace = (i: number) => (e: LayoutChangeEvent) => {
+    const { x, y } = e.nativeEvent.layout;
+    setPlaces((p) => (p[i]?.x === x && p[i]?.y === y ? p : { ...p, [i]: { x, y } }));
+  };
 
   const emplacementsTable = useEmplacements(cartesAffichees, EMPLACEMENTS_TABLE);
   const emplacementsMain = useEmplacements(mainAffichee, EMPLACEMENTS_MAIN);
+
+  /**
+   * La répartition de la main juste avant le coup.
+   *
+   * Au moment où la séquence démarre, la carte jouée a déjà quitté la main :
+   * son emplacement est libéré. Pour faire partir l'animation de là où elle
+   * était, il faut avoir gardé l'état précédent.
+   */
+  const mainRepartieAvant = useRef<(Carte | null)[]>(emplacementsMain);
+  useEffect(() => {
+    if (!sequence) mainRepartieAvant.current = emplacementsMain;
+  });
+
+  /**
+   * Le trajet de la carte jouée, de la zone de révélation jusqu'à son
+   * emplacement exact sur le tapis.
+   *
+   * Les coordonnées s'additionnent en cascade : l'emplacement est mesuré dans
+   * la rangée, la rangée dans le tapis, le tapis dans la zone de jeu. Si
+   * l'emplacement n'a pas encore été mesuré, on vise le centre du tapis —
+   * moins précis, mais jamais absurde.
+   */
+  const trajet = useMemo(() => {
+    const immobile = {
+      debut: { x: 0, y: 0 },
+      fin: { x: 0, y: 0 },
+      arrivee: null as { x: number; y: number } | null,
+    };
+    if (!zone.hauteur || !tapis.hauteur || !sequence) return immobile;
+
+    // La couche de révélation place la carte ici : tout se calcule en écart
+    // par rapport à ce point.
+    const socleX = (zone.largeur - LARGEUR_CARTE) / 2;
+    const socleY =
+      sequence.joueur === lui
+        ? MARGE_REVELATION
+        : zone.hauteur - MARGE_REVELATION - HAUTEUR_CARTE;
+
+    /** Position absolue d'un emplacement du tapis, dans la zone de jeu. */
+    const situer = (i: number) => {
+      const place = places[i];
+      if (!place) return null;
+      return { x: tapis.x + rangee.x + place.x, y: tapis.y + rangee.y + place.y };
+    };
+
+    // Arrivée. Avec prise, la carte vient se poser sur les cartes qu'elle
+    // ramasse, légèrement décalée du côté de celui qui joue. Sans prise, elle
+    // rejoint son propre emplacement.
+    let arrivee: { x: number; y: number } | null = null;
+
+    if (sequence.prise.length > 0) {
+      const cibles = sequence.prise
+        .map((c) => emplacementsTable.findIndex((e) => e && memeCarte(e, c)))
+        .map(situer)
+        .filter((p): p is { x: number; y: number } => p !== null);
+
+      if (cibles.length > 0) {
+        const decalage = sequence.joueur === lui ? -CHEVAUCHEMENT : CHEVAUCHEMENT;
+        arrivee = {
+          x: cibles.reduce((t, p) => t + p.x, 0) / cibles.length,
+          y: cibles.reduce((t, p) => t + p.y, 0) / cibles.length + decalage,
+        };
+      }
+    } else {
+      const i = emplacementsTable.findIndex(
+        (c) => c && memeCarte(c, sequence.carte),
+      );
+      arrivee = i >= 0 ? situer(i) : null;
+    }
+
+    if (!arrivee) {
+      arrivee = {
+        x: socleX,
+        y: tapis.y + tapis.hauteur / 2 - HAUTEUR_CARTE / 2,
+      };
+    }
+
+    const fin = { x: arrivee.x - socleX, y: arrivee.y - socleY };
+
+    // Départ : pour sa propre carte, l'emplacement qu'elle occupait dans la
+    // main. Pour celle de l'adversaire, la zone de révélation elle-même.
+    if (sequence.joueur === lui) return { debut: { x: 0, y: 0 }, fin, arrivee };
+
+    const iMain = mainRepartieAvant.current.findIndex(
+      (c) => c && memeCarte(c, sequence.carte),
+    );
+    const placeMain = iMain >= 0 ? placesMain[iMain] : undefined;
+    if (!placeMain) return { debut: { x: 0, y: 0 }, fin, arrivee };
+
+    return {
+      debut: {
+        x: zoneMain.x + placeMain.x - socleX,
+        y: zoneMain.y + placeMain.y - socleY,
+      },
+      fin,
+      arrivee,
+    };
+  }, [
+    zone,
+    tapis,
+    rangee,
+    places,
+    zoneMain,
+    placesMain,
+    sequence,
+    lui,
+    emplacementsTable,
+  ]);
+
+  /** De l'endroit où la carte jouée s'est posée jusqu'au paquet du gagnant. */
+  const versLePaquet = useMemo(() => {
+    if (!sequence || !trajet.arrivee) return { x: 0, y: 0 };
+    const paquet = cibles[sequence.joueur];
+    if (!paquet) return { x: 0, y: sequence.joueur === lui ? -150 : 150 };
+    return { x: paquet.x - trajet.arrivee.x, y: paquet.y - trajet.arrivee.y };
+  }, [sequence, trajet, cibles, lui]);
 
   const jouer = (coup: Coup) => {
     setChoisie(null);
@@ -366,13 +584,23 @@ export function Tapis({
         </Text>
       </View>
 
-      <View style={styles.zoneJeu}>
+      <View
+        style={styles.zoneJeu}
+        onLayout={(e) =>
+          setZone({
+            largeur: e.nativeEvent.layout.width,
+            hauteur: e.nativeEvent.layout.height,
+          })
+        }
+      >
       <BlocJoueur
         nom={legendeAdversaire}
         avatar={avatarAdversaire}
         chkobbas={vue.chkobbas[lui]}
+        ramassees={sequence ? ramasseesAvant.current[lui] : vue.ramasseesAdversaire}
         actif={!vue.aMoiDeJouer}
         secondes={secondes}
+        onCible={noterCible(lui)}
       />
       {/* Les dos occupent des emplacements fixes. On ne connaît pas la carte
           jouée par l'adversaire, donc c'est le dernier emplacement qui se
@@ -396,20 +624,47 @@ export function Tapis({
           : ' '}
       </Text>
 
-      <View style={styles.tapis}>
+      <View
+        style={styles.tapis}
+        onLayout={(e) =>
+          setTapis({
+            x: e.nativeEvent.layout.x,
+            y: e.nativeEvent.layout.y,
+            hauteur: e.nativeEvent.layout.height,
+          })
+        }
+      >
         <Text style={styles.pioche}>
           {vue.pioche} en pioche · {vue.mesRamassees.length} carte
           {vue.mesRamassees.length > 1 ? 's' : ''} gagnée
           {vue.mesRamassees.length > 1 ? 's' : ''}
         </Text>
-        <View style={styles.rangeeCentree}>
+        <View
+          style={styles.rangeeCentree}
+          onLayout={(e) =>
+            setRangee({ x: e.nativeEvent.layout.x, y: e.nativeEvent.layout.y })
+          }
+        >
           {emplacementsTable.map((c, i) => {
-            if (!c) return <View key={`vide-${i}`} style={styles.emplacement} />;
+            if (!c) {
+              return (
+                <View
+                  key={`vide-${i}`}
+                  style={styles.emplacement}
+                  onLayout={noterPlace(i)}
+                />
+              );
+            }
 
             // Pendant qu'elle se retourne au centre, la carte jouée laisse
             // son emplacement visible mais vide. Elle s'y posera à la fin.
-            if (sequence?.phase === 'revelation' && memeCarte(c, sequence.carte)) {
-              return <View key={cle(c)} style={styles.emplacement} />;
+            if (
+              (sequence?.phase === 'revelation' || sequence?.phase === 'depot') &&
+              memeCarte(c, sequence.carte)
+            ) {
+              return (
+                <View key={cle(c)} style={styles.emplacement} onLayout={noterPlace(i)} />
+              );
             }
 
             const carte = (
@@ -430,33 +685,58 @@ export function Tapis({
               sequence?.phase === 'balayage' &&
               sequence.balayage?.cartes.some((p) => memeCarte(p, c));
 
-            if (!prise && !balayee) return <View key={cle(c)}>{carte}</View>;
+            if (!prise && !balayee) {
+              return (
+                <View key={cle(c)} onLayout={noterPlace(i)}>
+                  {carte}
+                </View>
+              );
+            }
 
             const progression = prise ? ramassage : balayage;
             const beneficiaire = prise
               ? sequence!.joueur
               : sequence!.balayage!.joueur;
-            const versLeHaut = beneficiaire === lui;
+
+            // La carte rejoint le paquet de celui qui l'emporte. Faute de
+            // mesure, on retombe sur un simple glissement vers son camp.
+            const cible = cibles[beneficiaire];
+            const place = places[i];
+            const depart = place
+              ? { x: tapis.x + rangee.x + place.x, y: tapis.y + rangee.y + place.y }
+              : null;
+
+            const vers =
+              cible && depart
+                ? { x: cible.x - depart.x, y: cible.y - depart.y }
+                : { x: 0, y: beneficiaire === lui ? -150 : 150 };
 
             return (
               <Animated.View
                 key={cle(c)}
+                onLayout={noterPlace(i)}
                 style={{
                   opacity: progression.interpolate({
-                    inputRange: [0, 0.65, 1],
-                    outputRange: [1, 0.85, 0],
+                    inputRange: [0, 0.8, 1],
+                    outputRange: [1, 1, 0],
                   }),
                   transform: [
                     {
+                      translateX: progression.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0, vers.x],
+                      }),
+                    },
+                    {
                       translateY: progression.interpolate({
                         inputRange: [0, 1],
-                        outputRange: [0, versLeHaut ? -150 : 150],
+                        outputRange: [0, vers.y],
                       }),
                     },
                     {
                       scale: progression.interpolate({
                         inputRange: [0, 1],
-                        outputRange: [1, 0.62],
+                        outputRange: [1, 0.34],
                       }),
                     },
                   ],
@@ -491,22 +771,32 @@ export function Tapis({
         </View>
       )}
 
-      <View style={[styles.rangee, styles.rangeeMain]}>
+      <View
+        style={[styles.rangee, styles.rangeeMain]}
+        onLayout={(e) =>
+          setZoneMain({ x: e.nativeEvent.layout.x, y: e.nativeEvent.layout.y })
+        }
+      >
         {emplacementsMain.map((c, i) =>
           c ? (
-            <CarteVue
-              key={cle(c)}
-              carte={c}
-              theme={theme}
-              apparence={choisie && memeCarte(choisie, c) ? 'choisie' : 'neutre'}
+            <View key={cle(c)} onLayout={noterPlaceMain(i)}>
+              <CarteVue
+                carte={c}
+                theme={theme}
+                apparence={choisie && memeCarte(choisie, c) ? 'choisie' : 'neutre'}
                 onPress={
-                actif && !sequence && coupsDisponibles.length > 0
-                  ? () => toucher(c)
-                  : undefined
-              }
-            />
+                  actif && !sequence && coupsDisponibles.length > 0
+                    ? () => toucher(c)
+                    : undefined
+                }
+              />
+            </View>
           ) : (
-            <View key={`vide-${i}`} style={styles.emplacement} />
+            <View
+              key={`vide-${i}`}
+              style={styles.emplacement}
+              onLayout={noterPlaceMain(i)}
+            />
           ),
         )}
       </View>
@@ -515,11 +805,15 @@ export function Tapis({
         nom={nomJoueur}
         avatar={avatarJoueur}
         chkobbas={vue.chkobbas[moi]}
+        ramassees={sequence ? ramasseesAvant.current[moi] : vue.mesRamassees.length}
         actif={actif}
         secondes={secondes}
+        onCible={noterCible(moi)}
       />
 
-      {sequence?.phase === 'revelation' && (
+      {(sequence?.phase === 'revelation' ||
+        sequence?.phase === 'depot' ||
+        (sequence?.phase === 'ramassage' && sequence.prise.length > 0)) && (
         <View
           style={[
             styles.revelation,
@@ -531,7 +825,45 @@ export function Tapis({
               redéploie, comme une carte qu'on tourne face visible. */}
           <Animated.View
             style={{
+              // Pas de fondu pendant le dépôt : la carte atterrit exactement
+              // là où il faut, le relais est invisible. Le seul fondu est
+              // celui de la fin du ramassage.
+              opacity: ramassage.interpolate({
+                inputRange: [0, 0.8, 1],
+                outputRange: [1, 1, 0],
+              }),
               transform: [
+                {
+                  translateX: depot.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [trajet.debut.x, trajet.fin.x],
+                  }),
+                },
+                {
+                  translateY: depot.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [trajet.debut.y, trajet.fin.y],
+                  }),
+                },
+                // Puis, avec sa prise, elle file vers le paquet.
+                {
+                  translateX: ramassage.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0, versLePaquet.x],
+                  }),
+                },
+                {
+                  translateY: ramassage.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0, versLePaquet.y],
+                  }),
+                },
+                {
+                  scale: ramassage.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [1, 0.34],
+                  }),
+                },
                 {
                   scaleX: apparition.interpolate({
                     inputRange: [0, 0.5, 1],
@@ -580,25 +912,61 @@ function BlocJoueur({
   nom,
   avatar,
   chkobbas,
+  ramassees,
   actif,
   secondes,
+  onCible,
 }: {
   nom: string;
   avatar?: string;
   chkobbas: number;
+  /** Nombre de cartes gagnées, affiché sur le paquet. */
+  ramassees: number;
   actif: boolean;
   secondes: number | null;
+  /** Position du paquet dans la zone de jeu : cible des cartes ramassées. */
+  onCible?: (position: { x: number; y: number }) => void;
 }) {
   const urgence = actif && secondes !== null && secondes <= 10;
 
+  // Trois mesures emboîtées à additionner pour situer le paquet.
+  const bloc = useRef({ x: 0, y: 0 });
+  const ligne = useRef({ x: 0, y: 0 });
+  const paquet = useRef({ x: 0, y: 0 });
+
+  const publier = () => {
+    onCible?.({
+      x: bloc.current.x + ligne.current.x + paquet.current.x,
+      y: bloc.current.y + ligne.current.y + paquet.current.y,
+    });
+  };
+
+  const relever =
+    (cible: { current: { x: number; y: number } }) => (e: LayoutChangeEvent) => {
+      cible.current = { x: e.nativeEvent.layout.x, y: e.nativeEvent.layout.y };
+      publier();
+    };
+
   return (
-    <View style={styles.joueur}>
-      <View style={[styles.avatar, actif && styles.avatarActif]}>
-        {avatar ? (
-          <Image source={{ uri: avatar }} style={styles.photo} />
-        ) : (
-          <Text style={styles.initiale}>{nom.slice(0, 1).toUpperCase()}</Text>
-        )}
+    <View style={styles.joueur} onLayout={relever(bloc)}>
+      <View style={styles.ligneAvatar} onLayout={relever(ligne)}>
+        {/* Cale de même largeur que le paquet, pour garder l'avatar centré. */}
+        <View style={styles.cale} />
+
+        <View style={[styles.avatar, actif && styles.avatarActif]}>
+          {avatar ? (
+            <Image source={{ uri: avatar }} style={styles.photo} />
+          ) : (
+            <Text style={styles.initiale}>{nom.slice(0, 1).toUpperCase()}</Text>
+          )}
+        </View>
+
+        <View
+          style={[styles.paquet, ramassees === 0 && styles.paquetVide]}
+          onLayout={relever(paquet)}
+        >
+          <Text style={styles.compteur}>{ramassees}</Text>
+        </View>
       </View>
 
       <Text style={[styles.nom, actif && styles.nomActif]} numberOfLines={1}>
@@ -657,6 +1025,21 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   joueur: { alignItems: 'center', gap: 5 },
+  ligneAvatar: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  // Le paquet des cartes gagnées, cible des animations de ramassage.
+  paquet: {
+    width: 30,
+    height: 42,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(240,226,196,0.28)',
+    backgroundColor: '#123f52',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  paquetVide: { backgroundColor: 'transparent', borderColor: 'rgba(240,226,196,0.12)' },
+  compteur: { color: PALETTE.sable, fontSize: 12, fontVariant: ['tabular-nums'] },
+  cale: { width: 30 },
   avatar: {
     width: 52,
     height: 52,

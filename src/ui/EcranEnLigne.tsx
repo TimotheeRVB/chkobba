@@ -49,7 +49,7 @@ export default function EcranEnLigne({ adresse, code, theme, onTheme, onQuitter 
 
   useEffect(() => {
     if (!decompte) return setDecompteMontre(false);
-    const minuteur = setTimeout(() => setDecompteMontre(true), 2000);
+    const minuteur = setTimeout(() => setDecompteMontre(true), 2300);
     return () => clearTimeout(minuteur);
   }, [decompte]);
 

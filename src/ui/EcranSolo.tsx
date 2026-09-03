@@ -72,7 +72,7 @@ export default function EcranSolo({
   useEffect(() => {
     if (donneTerminee(etat) && !decompte) {
       // Assez long pour laisser le ramassage de la dernière carte s'achever.
-      const minuteur = setTimeout(() => setDecompte(compterDonne(etat)), 2000);
+      const minuteur = setTimeout(() => setDecompte(compterDonne(etat)), 2300);
       return () => clearTimeout(minuteur);
     }
   }, [etat, decompte]);
