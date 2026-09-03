@@ -320,9 +320,14 @@ export function Tapis({
     // La carte jouée reste dans la liste même pendant qu'elle se retourne
     // ailleurs : sans ça, son emplacement ne serait pas réservé et elle
     // viendrait se poser sur le premier trou venu à la fin de la révélation.
+    //
+    // Les cartes de la prise, elles, ne sont réaffichées que jusqu'à la fin
+    // du ramassage. Passé ce point elles sont dans le paquet : les garder
+    // dans la liste les ferait réapparaître à leur emplacement pendant le
+    // balayage final.
     return [
       ...vue.table,
-      ...sequence.prise,
+      ...(sequence.phase === 'balayage' ? [] : sequence.prise),
       ...(sequence.balayage?.cartes ?? []),
     ];
   }, [vue.table, sequence]);
