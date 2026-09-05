@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { SafeAreaView, StyleSheet } from 'react-native';
+import {
+  AppState,
+  SafeAreaView,
+  StatusBar as BarreSysteme,
+  StyleSheet,
+} from 'react-native';
 
 import Accueil, { ADRESSE_SERVEUR } from './src/ui/Accueil';
 import EcranSolo from './src/ui/EcranSolo';
@@ -13,6 +18,25 @@ type Ecran = { nom: 'accueil' } | { nom: 'solo' } | { nom: 'enligne'; code: stri
 export default function App() {
   const [ecran, setEcran] = useState<Ecran>({ nom: 'accueil' });
   const [theme, setTheme] = useState<NomTheme>('francais');
+
+  /**
+   * Maintien du plein écran.
+   *
+   * Masquer la barre d'état est un ordre ponctuel, pas un état permanent :
+   * tout ce qui la fait réapparaître — le menu de développement, un appel,
+   * un retour depuis une autre application — la laisse visible. On la remasque
+   * donc à chaque retour au premier plan.
+   */
+  useEffect(() => {
+    const masquer = () => BarreSysteme.setHidden(true, 'fade');
+    masquer();
+
+    const abonnement = AppState.addEventListener('change', (etat) => {
+      if (etat === 'active') masquer();
+    });
+
+    return () => abonnement.remove();
+  }, []);
 
   // L'habillage choisi est retenu d'une session à l'autre.
   useEffect(() => {
@@ -35,7 +59,8 @@ export default function App() {
 
   return (
     <SafeAreaView style={styles.racine}>
-      <StatusBar style="light" />
+      {/* Plein écran : la barre d'état laisse la place au jeu. */}
+      <StatusBar hidden />
 
       {ecran.nom === 'accueil' && <Accueil onSolo={() => setEcran({ nom: 'solo' })} onEnLigne={rejoindre} />}
 
@@ -57,5 +82,5 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  racine: { flex: 1, backgroundColor: '#11554d' },
+  racine: { flex: 1, backgroundColor: '#0a2233' },
 });

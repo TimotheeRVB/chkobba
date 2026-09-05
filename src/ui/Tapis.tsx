@@ -21,8 +21,17 @@ import {
 } from 'react-native';
 
 import { type Carte, type Coup, type Vue, coupsPour, prisesPossibles } from '../jeu';
-import { CarteVue, DosDeCarte, nomCarte, type NomTheme } from './Carte';
+import {
+  CARTE_HAUTEUR,
+  CARTE_LARGEUR,
+  CarteVue,
+  DosDeCarte,
+  nomCarte,
+  type NomTheme,
+} from './Carte';
 import { PALETTE } from './theme';
+import Zellige from './Zellige';
+import { BoutonMenu, Menu } from './Menu';
 
 const cle = (c: Carte) => `${c.couleur}-${c.valeur}`;
 const memeCarte = (a: Carte, b: Carte) => a.couleur === b.couleur && a.valeur === b.valeur;
@@ -33,9 +42,12 @@ const EMPLACEMENTS_MAIN = 3;
 /**
  * Emplacements réservés sur le tapis.
  *
- * Mesure sur 108 000 positions : une rangée de cinq suffit dans 95 % des cas,
- * huit couvrent 99,8 %, et le maximum observé est de dix. Au-delà, la rangée
- * s'agrandit — c'est assez rare pour être acceptable.
+ * Mesure sur 108 000 positions : cinq cartes ou moins dans 95 % des cas, huit
+ * ou moins dans 99,8 %, dix au maximum.
+ *
+ * Avec les marges actuelles, quatre cartes tiennent par rangée dès 360 dp de
+ * large : les huit emplacements occupent donc deux rangées. En dessous de
+ * 360 dp il en faut trois, ce qui reste acceptable.
  */
 const EMPLACEMENTS_TABLE = 8;
 
@@ -46,9 +58,9 @@ const RAMASSAGE_MS = 420;
 const BALAYAGE_MS = 460;
 const DEPOT_MS = 300;
 
-/** Gabarit d'une carte, en dur : il sert au calcul des trajets. */
-const HAUTEUR_CARTE = 90;
-const LARGEUR_CARTE = 62;
+/** Gabarit repris de Carte.tsx : une seule source pour tous les calculs. */
+const HAUTEUR_CARTE = CARTE_HAUTEUR;
+const LARGEUR_CARTE = CARTE_LARGEUR;
 /** Écart entre le bord de la zone de jeu et la carte révélée. */
 const MARGE_REVELATION = 96;
 /** Décalage de la carte qui vient se poser sur sa prise. */
@@ -262,7 +274,10 @@ function useSequence(
 type Props = {
   vue: Vue;
   theme: NomTheme;
+  /** Changement d'habillage, depuis le menu de partie. */
   onTheme: (t: NomTheme) => void;
+  /** Quitter la partie depuis le menu. */
+  onQuitter?: () => void;
   onJouer: (coup: Coup) => void;
   /** Nom affiché sous l'avatar adverse. */
   legendeAdversaire: string;
@@ -283,6 +298,7 @@ export function Tapis({
   onTheme,
   onJouer,
   legendeAdversaire,
+  onQuitter,
   nomJoueur = 'Vous',
   avatarJoueur,
   avatarAdversaire,
@@ -290,6 +306,7 @@ export function Tapis({
   secondes = null,
 }: Props) {
   const [choisie, setChoisie] = useState<Carte | null>(null);
+  const [menuOuvert, setMenuOuvert] = useState(false);
 
   const moi = vue.moi;
   const lui = moi === 0 ? 1 : 0;
@@ -302,6 +319,26 @@ export function Tapis({
   const visees = useMemo(() => new Set(options.flat().map(cle)), [options]);
 
   const actif = vue.aMoiDeJouer && !gele;
+
+  /**
+   * Part du temps restante, pour la barre sous l'avatar.
+   *
+   * Le serveur n'envoie que les secondes restantes, pas la durée totale du
+   * tour. La première valeur reçue après un changement de main fait donc
+   * office de maximum.
+   */
+  const [maxSecondes, setMaxSecondes] = useState(1);
+
+  useEffect(() => {
+    setMaxSecondes(secondes ?? 1);
+  }, [vue.aMoiDeJouer]);
+
+  useEffect(() => {
+    if (secondes !== null) setMaxSecondes((m) => (secondes > m ? secondes : m));
+  }, [secondes]);
+
+  const fraction =
+    secondes === null ? null : Math.min(1, secondes / Math.max(1, maxSecondes));
 
   const { sequence, apparition, depot, ramassage, balayage } =
     useSequence(vue.dernierCoup, moi);
@@ -566,29 +603,26 @@ export function Tapis({
   const coupsDisponibles = coupsPour(vue.table, vue.maMain);
 
   return (
-    <ScrollView style={styles.scene} contentContainerStyle={styles.contenu}>
-      <View style={styles.bandeau}>
-        <Text style={styles.titre}>Chkobba</Text>
+    <View style={styles.salle}>
+      <Zellige />
+      <BoutonMenu onPress={() => setMenuOuvert(true)} />
 
-        <View style={styles.selecteur}>
-          {(['francais', 'espagnol'] as const).map((id) => (
-            <Pressable
-              key={id}
-              onPress={() => onTheme(id)}
-              style={[styles.onglet, theme === id && styles.ongletActif]}
-            >
-              <Text style={[styles.texteOnglet, theme === id && styles.texteOngletActif]}>
-                {id === 'francais' ? 'Français' : 'Espagnol'}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
+      <Menu
+        visible={menuOuvert}
+        theme={theme}
+        onTheme={onTheme}
+        onFermer={() => setMenuOuvert(false)}
+        onQuitter={
+          onQuitter
+            ? () => {
+                setMenuOuvert(false);
+                onQuitter();
+              }
+            : undefined
+        }
+      />
 
-        <Text style={styles.scores}>
-          {vue.scores[moi]} – {vue.scores[lui]}
-        </Text>
-      </View>
-
+      <ScrollView style={styles.scene} contentContainerStyle={styles.contenu}>
       <View
         style={styles.zoneJeu}
         onLayout={(e) =>
@@ -602,9 +636,12 @@ export function Tapis({
         nom={legendeAdversaire}
         avatar={avatarAdversaire}
         chkobbas={vue.chkobbas[lui]}
-        ramassees={sequence ? ramasseesAvant.current[lui] : vue.ramasseesAdversaire}
+        aDesCartes={
+          (sequence ? ramasseesAvant.current[lui]! : vue.ramasseesAdversaire) > 0
+        }
         actif={!vue.aMoiDeJouer}
         secondes={secondes}
+        fraction={fraction}
         onCible={noterCible(lui)}
       />
       {/* Les dos occupent des emplacements fixes. On ne connaît pas la carte
@@ -613,7 +650,7 @@ export function Tapis({
       <View style={[styles.rangee, styles.rangeeMain]}>
         {Array.from({ length: EMPLACEMENTS_MAIN }).map((_, i) =>
           i < cartesAdversaire ? (
-            <DosDeCarte key={`dos-${i}`} />
+            <DosDeCarte key={`dos-${i}`} theme={theme} />
           ) : (
             <View key={`vide-${i}`} style={styles.emplacement} />
           ),
@@ -639,6 +676,7 @@ export function Tapis({
           })
         }
       >
+        <View style={styles.filet} pointerEvents="none" />
         <Text style={styles.pioche}>
           {vue.pioche} en pioche · {vue.mesRamassees.length} carte
           {vue.mesRamassees.length > 1 ? 's' : ''} gagnée
@@ -810,9 +848,13 @@ export function Tapis({
         nom={nomJoueur}
         avatar={avatarJoueur}
         chkobbas={vue.chkobbas[moi]}
-        ramassees={sequence ? ramasseesAvant.current[moi] : vue.mesRamassees.length}
+        score={`${vue.scores[moi]} – ${vue.scores[lui]}`}
+        aDesCartes={
+          (sequence ? ramasseesAvant.current[moi]! : vue.mesRamassees.length) > 0
+        }
         actif={actif}
         secondes={secondes}
+        fraction={fraction}
         onCible={noterCible(moi)}
       />
 
@@ -903,7 +945,8 @@ export function Tapis({
         </View>
       )}
       </View>
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -917,18 +960,24 @@ function BlocJoueur({
   nom,
   avatar,
   chkobbas,
-  ramassees,
+  score,
+  aDesCartes,
   actif,
   secondes,
+  fraction,
   onCible,
 }: {
   nom: string;
   avatar?: string;
   chkobbas: number;
-  /** Nombre de cartes gagnées, affiché sur le paquet. */
-  ramassees: number;
+  /** Score de la partie, déjà mis en forme. Absent chez l'adversaire. */
+  score?: string;
+  /** Le paquet contient-il des cartes ? Son contenu, lui, reste secret. */
+  aDesCartes: boolean;
   actif: boolean;
   secondes: number | null;
+  /** Part du temps restante, de 1 à 0. Alimente la barre sous l'avatar. */
+  fraction: number | null;
   /** Position du paquet dans la zone de jeu : cible des cartes ramassées. */
   onCible?: (position: { x: number; y: number }) => void;
 }) {
@@ -955,8 +1004,15 @@ function BlocJoueur({
   return (
     <View style={styles.joueur} onLayout={relever(bloc)}>
       <View style={styles.ligneAvatar} onLayout={relever(ligne)}>
-        {/* Cale de même largeur que le paquet, pour garder l'avatar centré. */}
-        <View style={styles.cale} />
+        {/* L'espace symétrique du paquet accueille le score, affiché du seul
+            côté du joueur : vous d'abord, l'adversaire ensuite. */}
+        <View style={styles.cale}>
+          {score && (
+            <Text style={styles.score} numberOfLines={1}>
+              {score}
+            </Text>
+          )}
+        </View>
 
         <View style={[styles.avatar, actif && styles.avatarActif]}>
           {avatar ? (
@@ -966,64 +1022,54 @@ function BlocJoueur({
           )}
         </View>
 
+        {/* Le paquet ne dit rien de son contenu : ni le nombre de cartes, ni
+            ce qu'il y a dedans. C'est la règle de cette variante. */}
         <View
-          style={[styles.paquet, ramassees === 0 && styles.paquetVide]}
+          style={[styles.paquet, !aDesCartes && styles.paquetVide]}
           onLayout={relever(paquet)}
-        >
-          <Text style={styles.compteur}>{ramassees}</Text>
-        </View>
+        />
+      </View>
+
+      {/* Barre de temps : se lit d'un coup d'œil, sans quitter le tapis. */}
+      <View style={styles.jauge}>
+        {actif && fraction !== null && (
+          <View
+            style={[
+              styles.jaugeRemplie,
+              urgence && styles.jaugeUrgente,
+              { width: `${Math.round(fraction * 100)}%` },
+            ]}
+          />
+        )}
       </View>
 
       <Text style={[styles.nom, actif && styles.nomActif]} numberOfLines={1}>
         {nom}
       </Text>
 
-      <Text style={[styles.detail, urgence && styles.detailUrgent]} numberOfLines={1}>
+      <Text style={styles.detail} numberOfLines={1}>
         {chkobbas} chkobba{chkobbas > 1 ? 's' : ''}
-        {actif && secondes !== null ? ` · ${secondes} s` : ''}
       </Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  scene: { flex: 1, backgroundColor: PALETTE.tapis },
+  salle: { flex: 1, backgroundColor: PALETTE.nuit },
+  scene: { flex: 1, backgroundColor: 'transparent' },
   contenu: {
-    paddingHorizontal: 16,
-    paddingTop: 14,
-    paddingBottom: 22,
+    paddingHorizontal: 8,
+    paddingTop: 10,
+    paddingBottom: 18,
     gap: 10,
     flexGrow: 1,
   },
 
-  bandeau: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    flexWrap: 'wrap',
-    gap: 10,
-    paddingBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: PALETTE.bordure,
-  },
-  titre: { color: PALETTE.ivoire, fontSize: 24, fontWeight: '600' },
-  scores: { color: PALETTE.ivoire, fontSize: 20, fontWeight: '600' },
 
-  selecteur: {
-    flexDirection: 'row',
-    borderWidth: 1,
-    borderColor: PALETTE.bordure,
-    borderRadius: 999,
-    overflow: 'hidden',
-  },
-  onglet: { paddingVertical: 5, paddingHorizontal: 12 },
-  ongletActif: { backgroundColor: PALETTE.laiton },
-  texteOnglet: { color: PALETTE.sable, fontSize: 11 },
-  texteOngletActif: { color: PALETTE.nuit, fontWeight: '700' },
 
-  // Absorbe toute la hauteur laissée libre par le bandeau, et centre la zone
-  // de jeu dedans. Sur un grand écran, l'espace en trop se répartit au-dessus
-  // et en dessous plutôt que d'étirer le tapis.
+  // Occupe tout l'écran et centre la zone de jeu dedans. Sur un grand écran,
+  // l'espace en trop se répartit au-dessus et en dessous plutôt que d'étirer
+  // le tapis.
   zoneJeu: {
     flexGrow: 1,
     justifyContent: 'center',
@@ -1033,25 +1079,44 @@ const styles = StyleSheet.create({
   ligneAvatar: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   // Le paquet des cartes gagnées, cible des animations de ramassage.
   paquet: {
-    width: 30,
-    height: 42,
+    width: 34,
+    height: 48,
+    // Les marges portent l'encombrement du paquet à la largeur de la cale,
+    // pour que l'avatar reste centré malgré le score à gauche.
+    marginHorizontal: 11,
     borderRadius: 4,
     borderWidth: 1,
-    borderColor: 'rgba(240,226,196,0.28)',
+    borderColor: PALETTE.laitonPale,
     backgroundColor: '#123f52',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  paquetVide: { backgroundColor: 'transparent', borderColor: 'rgba(240,226,196,0.12)' },
-  compteur: { color: PALETTE.sable, fontSize: 12, fontVariant: ['tabular-nums'] },
-  cale: { width: 30 },
+  paquetVide: { backgroundColor: 'transparent', borderColor: 'rgba(242,230,204,0.12)' },
+  cale: { width: 56, alignItems: 'center' },
+  score: {
+    color: PALETTE.laiton,
+    fontSize: 16,
+    fontWeight: '600',
+    fontVariant: ['tabular-nums'],
+  },
+  // Hauteur réservée en permanence : la barre apparaît et disparaît sans
+  // faire bouger le reste.
+  jauge: {
+    width: 52,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: 'rgba(240,226,196,0.12)',
+    overflow: 'hidden',
+  },
+  jaugeRemplie: { height: 3, borderRadius: 2, backgroundColor: PALETTE.laiton },
+  jaugeUrgente: { backgroundColor: '#e8a33d' },
   avatar: {
     width: 52,
     height: 52,
     borderRadius: 26,
     borderWidth: 1.5,
-    borderColor: PALETTE.bordure,
-    backgroundColor: 'rgba(6,40,36,0.4)',
+    borderColor: PALETTE.laitonPale,
+    backgroundColor: 'rgba(10,34,51,0.55)',
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
@@ -1060,7 +1125,12 @@ const styles = StyleSheet.create({
   avatarActif: {
     borderColor: PALETTE.laiton,
     borderWidth: 2.5,
-    backgroundColor: 'rgba(200,145,47,0.18)',
+    backgroundColor: 'rgba(192,138,46,0.2)',
+    shadowColor: PALETTE.laiton,
+    shadowOpacity: 0.6,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 4,
   },
   photo: { width: '100%', height: '100%' },
   initiale: { color: PALETTE.sable, fontSize: 20, fontWeight: '500' },
@@ -1072,7 +1142,6 @@ const styles = StyleSheet.create({
     height: 16,
     fontVariant: ['tabular-nums'],
   },
-  detailUrgent: { color: '#e8a33d', fontWeight: '700' },
   annonce: { color: PALETTE.sable, fontSize: 13, fontStyle: 'italic', height: 18 },
 
   rangee: {
@@ -1084,7 +1153,7 @@ const styles = StyleSheet.create({
   },
   // Les mains ne dépassent jamais trois cartes : une rangée suffit, et la
   // hauteur figée empêche l'écran de sauter quand la main se vide.
-  rangeeMain: { height: 90 },
+  rangeeMain: { height: CARTE_HAUTEUR },
   rangeeCentree: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1109,31 +1178,49 @@ const styles = StyleSheet.create({
   // Emplacement libre : même gabarit qu'une carte, tracé discrètement. Il
   // réserve la place et donne au tapis l'allure d'un plateau de jeu.
   emplacement: {
-    width: 62,
-    height: 90,
+    width: CARTE_LARGEUR,
+    height: CARTE_HAUTEUR,
     borderRadius: 5,
     borderWidth: 1,
-    borderColor: 'rgba(240,226,196,0.10)',
+    borderColor: 'rgba(242,230,204,0.12)',
   },
 
+  // Le tapis de jeu, traité comme un plateau de laiton posé sur la table :
+  // cerclage doré, feutre vert au centre, et un filet intérieur qui donne
+  // l'épaisseur du métal.
   tapis: {
-    padding: 14,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: PALETTE.bordure,
-    backgroundColor: 'rgba(6,40,36,0.3)',
+    padding: 12,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: PALETTE.laitonPale,
+    backgroundColor: PALETTE.tapis,
     gap: 8,
     justifyContent: 'center',
-    marginVertical: 6,
+    marginVertical: 8,
+    shadowColor: '#000',
+    shadowOpacity: 0.45,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 6,
+  },
+  filet: {
+    position: 'absolute',
+    top: 4,
+    left: 4,
+    right: 4,
+    bottom: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(192,138,46,0.22)',
   },
   pioche: { color: PALETTE.sable, fontSize: 11 },
 
   choix: {
     padding: 12,
-    borderRadius: 8,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: PALETTE.laiton,
-    backgroundColor: 'rgba(200,145,47,0.1)',
+    borderColor: PALETTE.laitonPale,
+    backgroundColor: 'rgba(10,34,51,0.7)',
     gap: 8,
   },
   choixTitre: { color: PALETTE.ivoire, fontSize: 13 },

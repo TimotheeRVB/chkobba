@@ -150,6 +150,7 @@ export default function EcranEnLigne({ adresse, code, theme, onTheme, onQuitter 
         onJouer={jouer}
         legendeAdversaire={statut === 'adversaireParti' ? 'Déconnecté' : 'Adversaire'}
         nomJoueur="Vous"
+        onQuitter={onQuitter}
         gele={statut !== 'jeu'}
         secondes={secondes}
       />

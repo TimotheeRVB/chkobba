@@ -1,15 +1,30 @@
-/** Palette et libellés partagés par l'interface. */
+/**
+ * Palette et libellés partagés par l'interface.
+ *
+ * L'ambiance visée est celle d'un café tunisien le soir : murs bleus de Sidi
+ * Bou Saïd, zellige en fond, plateau de laiton et tapis de jeu vert.
+ */
 
 import type { Couleur } from '../jeu';
 
 export const PALETTE = {
-  nuit: '#0c2730',
-  tapis: '#11554d',
-  tapisFonce: '#0a3b36',
-  ivoire: '#f0e2c4',
-  sable: 'rgba(240,226,196,0.6)',
-  laiton: '#c8912f',
-  bordure: 'rgba(240,226,196,0.16)',
+  /** Le bleu des murs, fond de toute l'application. */
+  nuit: '#0a2233',
+  /** Une nuance plus claire, pour le motif de zellige. */
+  azur: '#1d4d6b',
+
+  /** Le tapis de jeu. */
+  tapis: '#12564a',
+  tapisFonce: '#0b3a32',
+
+  /** Le laiton du plateau et des accents. */
+  laiton: '#c08a2e',
+  laitonPale: 'rgba(192,138,46,0.35)',
+
+  /** L'ivoire des cartes et du texte. */
+  ivoire: '#f2e6cc',
+  sable: 'rgba(242,230,204,0.62)',
+  bordure: 'rgba(242,230,204,0.16)',
 };
 
 export const COULEURS_TEXTE: Record<Couleur, string> = {

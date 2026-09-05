@@ -9,9 +9,11 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
 import type { Carte as TypeCarte, Couleur } from '../jeu';
+import { dosDe, faceDe, trouverJeu } from './jeux/registre';
 import { COULEURS_TEXTE } from './theme';
 
-export type NomTheme = 'francais' | 'espagnol';
+/** Identifiant d'un habillage du catalogue. */
+export type NomTheme = string;
 
 const SYMBOLE: Record<Couleur, string> = {
   deniers: '♦',
@@ -21,31 +23,27 @@ const SYMBOLE: Record<Couleur, string> = {
 };
 
 const FIGURES: Record<number, string> = { 8: 'D', 9: 'V', 10: 'R' };
-const FIGURES_ES: Record<number, string> = { 8: 'S', 9: 'C', 10: 'R' };
 
-export function indexDe(valeur: number, theme: NomTheme = 'francais'): string {
+/**
+ * L'indice d'une carte : A, 2 à 7, puis D, V, R.
+ *
+ * Sert aussi bien aux coins des cartes qu'aux annonces textuelles, qui
+ * doivent nommer la carte quel que soit l'habillage choisi.
+ */
+export function indexDe(valeur: number): string {
   if (valeur === 1) return 'A';
-  const figures = theme === 'espagnol' ? FIGURES_ES : FIGURES;
-  return figures[valeur] ?? String(valeur);
+  return FIGURES[valeur] ?? String(valeur);
 }
 
-export function nomCarte(carte: TypeCarte, theme: NomTheme = 'francais'): string {
-  return `${indexDe(carte.valeur, theme)}${SYMBOLE[carte.couleur]}`;
+export function nomCarte(carte: TypeCarte): string {
+  return `${indexDe(carte.valeur)}${SYMBOLE[carte.couleur]}`;
 }
 
-const TEINTE: Record<NomTheme, Record<Couleur, string>> = {
-  francais: {
-    deniers: '#c1121f',
-    coupes: '#c1121f',
-    epees: '#1c1c1c',
-    batons: '#1c1c1c',
-  },
-  espagnol: {
-    deniers: '#b8860b',
-    coupes: '#a8322a',
-    epees: '#2f5d84',
-    batons: '#4a7340',
-  },
+const TEINTE: Record<Couleur, string> = {
+  deniers: '#c1121f',
+  coupes: '#c1121f',
+  epees: '#1c1c1c',
+  batons: '#1c1c1c',
 };
 
 /** Position des enseignes au centre des cartes numérales, en proportion. */
@@ -61,6 +59,13 @@ const PIPS: Record<number, [number, number][]> = {
     [0.26, 0.5], [0.74, 0.5], [0.26, 0.86], [0.74, 0.86],
   ],
 };
+
+/**
+ * Gabarit d'une carte, exporté pour que le tapis calcule ses emplacements et
+ * ses trajets d'animation sur les mêmes valeurs. Une seule source.
+ */
+export const CARTE_LARGEUR = 72;
+export const CARTE_HAUTEUR = 104;
 
 export type Apparence = 'neutre' | 'choisie' | 'visee' | 'estompee';
 
@@ -79,7 +84,9 @@ export function CarteVue({
   apparence = 'neutre',
   onPress,
 }: Props) {
-  const teinte = TEINTE[theme][carte.couleur];
+  const jeu = trouverJeu(theme);
+  const Face = faceDe(jeu, carte);
+  const teinte = TEINTE[carte.couleur];
   const symbole = SYMBOLE[carte.couleur];
   const figure = FIGURES[carte.valeur] !== undefined;
   const estHaya = carte.couleur === 'deniers' && carte.valeur === 7;
@@ -101,13 +108,30 @@ export function CarteVue({
       ]}
     >
       <Text style={[styles.index, { color: teinte }, petite && styles.indexPetit]}>
-        {indexDe(carte.valeur, theme)}
+        {indexDe(carte.valeur)}
       </Text>
       <Text style={[styles.symbole, { color: teinte }, petite && styles.symbolePetit]}>
         {symbole}
       </Text>
     </View>
   );
+
+  if (Face) {
+    return (
+      <Pressable
+        onPress={onPress}
+        disabled={!onPress}
+        style={[decor, styles.carteImage]}
+        accessibilityRole="button"
+        accessibilityLabel={`${carte.valeur} de ${COULEURS_TEXTE[carte.couleur]}`}
+      >
+        <Face
+          width={petite ? Math.round(CARTE_LARGEUR * 0.7) : CARTE_LARGEUR}
+          height={petite ? Math.round(CARTE_HAUTEUR * 0.7) : CARTE_HAUTEUR}
+        />
+      </Pressable>
+    );
+  }
 
   return (
     <Pressable
@@ -123,7 +147,7 @@ export function CarteVue({
         {figure ? (
           <View style={[styles.panneau, { borderColor: teinte }]}>
             <Text style={[styles.figure, { color: teinte }, petite && styles.figurePetite]}>
-              {indexDe(carte.valeur, theme)}
+              {indexDe(carte.valeur)}
             </Text>
           </View>
         ) : (
@@ -138,8 +162,8 @@ export function CarteVue({
                   left: `${x * 100}%`,
                   top: `${y * 100}%`,
                   transform: [
-                    { translateX: petite ? -4.5 : -6.5 },
-                    { translateY: petite ? -5 : -7 },
+                    { translateX: petite ? -5 : -7.5 },
+                    { translateY: petite ? -5.5 : -8 },
                     { rotate: y > 0.55 ? '180deg' : '0deg' },
                   ],
                 },
@@ -156,14 +180,39 @@ export function CarteVue({
   );
 }
 
-export function DosDeCarte({ petite = false }: { petite?: boolean }) {
-  return <View style={[styles.carte, petite ? styles.petite : styles.normale, styles.dos]} />;
+export function DosDeCarte({
+  petite = false,
+  theme = 'francais',
+}: {
+  petite?: boolean;
+  theme?: NomTheme;
+}) {
+  const Dos = dosDe(trouverJeu(theme));
+
+  if (Dos) {
+    return (
+      <View style={[styles.carte, petite ? styles.petite : styles.normale, styles.carteImage]}>
+        <Dos
+          width={petite ? Math.round(CARTE_LARGEUR * 0.7) : CARTE_LARGEUR}
+          height={petite ? Math.round(CARTE_HAUTEUR * 0.7) : CARTE_HAUTEUR}
+        />
+      </View>
+    );
+  }
+
+  return (
+    <View style={[styles.carte, petite ? styles.petite : styles.normale, styles.dos]}>
+      <View style={styles.dosCadre} />
+      <View style={styles.dosLosange} />
+      <View style={styles.dosCoeur} />
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
   carte: {
     borderRadius: 5,
-    backgroundColor: '#fdfbf6',
+    backgroundColor: '#f7f1e3',
     borderWidth: 1,
     borderColor: 'rgba(0,0,0,0.12)',
     shadowColor: '#000',
@@ -172,8 +221,10 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     elevation: 3,
   },
-  normale: { width: 62, height: 90 },
-  petite: { width: 44, height: 64 },
+  normale: { width: CARTE_LARGEUR, height: CARTE_HAUTEUR },
+  // Une carte fournie en fichier dessine son propre fond : on efface le nôtre.
+  carteImage: { backgroundColor: 'transparent', borderWidth: 0, overflow: 'hidden' },
+  petite: { width: Math.round(CARTE_LARGEUR * 0.7), height: Math.round(CARTE_HAUTEUR * 0.7) },
 
   choisie: { transform: [{ translateY: -10 }], borderColor: '#c8912f', borderWidth: 2 },
   visee: { transform: [{ translateY: -6 }], borderColor: '#c8912f', borderWidth: 2 },
@@ -184,18 +235,49 @@ const styles = StyleSheet.create({
   coinHaut: { top: 3, left: 4 },
   coinBas: { bottom: 3, right: 4 },
   retourne: { transform: [{ rotate: '180deg' }] },
-  index: { fontSize: 13, fontWeight: '700', lineHeight: 14 },
+  index: { fontSize: 15, fontWeight: '700', lineHeight: 16 },
   indexPetit: { fontSize: 11, lineHeight: 12 },
-  symbole: { fontSize: 10, lineHeight: 11 },
+  symbole: { fontSize: 12, lineHeight: 13 },
   symbolePetit: { fontSize: 8, lineHeight: 9 },
 
-  centre: { position: 'absolute', top: 14, bottom: 14, left: 12, right: 12 },
-  pip: { position: 'absolute', fontSize: 13, lineHeight: 14 },
+  centre: { position: 'absolute', top: 17, bottom: 17, left: 14, right: 14 },
+  pip: { position: 'absolute', fontSize: 15, lineHeight: 16 },
   pipPetit: { fontSize: 9, lineHeight: 10 },
 
   panneau: { flex: 1, borderWidth: 1, borderRadius: 2, alignItems: 'center', justifyContent: 'center' },
-  figure: { fontSize: 26, fontWeight: '600' },
+  figure: { fontSize: 30, fontWeight: '600' },
   figurePetite: { fontSize: 18 },
 
-  dos: { backgroundColor: '#123f52', borderColor: 'rgba(240,226,196,0.25)' },
+  // Dos de carte : un losange de zellige, écho du fond de la salle.
+  dos: {
+    backgroundColor: '#123f52',
+    borderColor: 'rgba(192,138,46,0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dosCadre: {
+    position: 'absolute',
+    top: 5,
+    left: 5,
+    right: 5,
+    bottom: 5,
+    borderRadius: 3,
+    borderWidth: 1,
+    borderColor: 'rgba(192,138,46,0.3)',
+  },
+  dosLosange: {
+    width: '46%',
+    aspectRatio: 1,
+    borderWidth: 1,
+    borderColor: 'rgba(192,138,46,0.55)',
+    transform: [{ rotate: '45deg' }],
+  },
+  dosCoeur: {
+    position: 'absolute',
+    width: '16%',
+    aspectRatio: 1,
+    borderWidth: 1,
+    borderColor: 'rgba(242,230,204,0.35)',
+    transform: [{ rotate: '45deg' }],
+  },
 });

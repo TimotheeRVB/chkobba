@@ -2,25 +2,24 @@
   "expo": {
     "name": "Chkobba",
     "slug": "chkobba",
-    "scheme": "chkobba",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
-    "backgroundColor": "#11554d",
+    "backgroundColor": "#0a2233",
     "splash": {
-      "backgroundColor": "#11554d",
+      "backgroundColor": "#0a2233",
       "resizeMode": "contain",
       "image": "./assets/icon.png"
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.timotheervb.chkobba"
+      "bundleIdentifier": "com.tonnom.chkobba"
     },
     "android": {
-      "package": "com.timotheervb.chkobba",
+      "package": "com.tonnom.chkobba",
       "adaptiveIcon": {
-        "backgroundColor": "#11554d",
+        "backgroundColor": "#0a2233",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -29,6 +28,14 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "androidStatusBar": {
+      "hidden": true,
+      "translucent": true
+    },
+    "androidNavigationBar": {
+      "visible": "immersive",
+      "backgroundColor": "#0a2233"
     },
     "extra": {
       "eas": {

@@ -4,10 +4,12 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { Decompte, Joueur } from '../jeu';
 import { PALETTE } from './theme';
+import Zellige from './Zellige';
 
 export function Panneau({ children }: { children: React.ReactNode }) {
   return (
     <View style={styles.scene}>
+      <Zellige />
       <View style={styles.panneau}>{children}</View>
     </View>
   );
@@ -86,15 +88,21 @@ export function FeuilleDecompte({
 }
 
 const styles = StyleSheet.create({
-  scene: { flex: 1, backgroundColor: PALETTE.tapis, justifyContent: 'center' },
+  scene: { flex: 1, backgroundColor: PALETTE.nuit, justifyContent: 'center' },
+  // Panneau posé sur la salle, cerclé de laiton comme le plateau de jeu.
   panneau: {
     margin: 20,
-    padding: 22,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(200,145,47,0.45)',
-    backgroundColor: '#0f453f',
+    padding: 24,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: PALETTE.laitonPale,
+    backgroundColor: PALETTE.tapisFonce,
     gap: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.5,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
   },
   titre: { color: PALETTE.ivoire, fontSize: 21, marginBottom: 12 },
   ligne: { flexDirection: 'row', alignItems: 'center', paddingVertical: 5 },
@@ -112,9 +120,13 @@ const styles = StyleSheet.create({
     backgroundColor: PALETTE.laiton,
     alignItems: 'center',
   },
-  boutonSecondaire: { backgroundColor: 'transparent', borderWidth: 1, borderColor: PALETTE.bordure },
+  boutonSecondaire: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: PALETTE.laitonPale,
+  },
   texteBouton: {
-    color: '#10322c',
+    color: PALETTE.nuit,
     fontWeight: '700',
     fontSize: 14,
     letterSpacing: 1,

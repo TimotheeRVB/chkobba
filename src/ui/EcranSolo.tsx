@@ -121,6 +121,7 @@ export default function EcranSolo({
       onJouer={(coup) => avancer(coup, VOUS)}
       legendeAdversaire="Ordinateur"
       nomJoueur="Vous"
+      onQuitter={onQuitter}
     />
   );
 }
