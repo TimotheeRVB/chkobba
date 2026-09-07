@@ -24,6 +24,7 @@ import {
 } from '../jeu';
 
 import { Tapis } from './Tapis';
+import { jouerSon } from '../sons';
 import { Bouton, FeuilleDecompte, Panneau } from './communs';
 import type { NomTheme } from './Carte';
 import { Text, StyleSheet } from 'react-native';
@@ -72,7 +73,10 @@ export default function EcranSolo({
   useEffect(() => {
     if (donneTerminee(etat) && !decompte) {
       // Assez long pour laisser le ramassage de la dernière carte s'achever.
-      const minuteur = setTimeout(() => setDecompte(compterDonne(etat)), 2300);
+      const minuteur = setTimeout(() => {
+        jouerSon('finDonne');
+        setDecompte(compterDonne(etat));
+      }, 2300);
       return () => clearTimeout(minuteur);
     }
   }, [etat, decompte]);
@@ -86,6 +90,10 @@ export default function EcranSolo({
   };
 
   const gagnant = vainqueur(etat);
+
+  useEffect(() => {
+    if (gagnant !== null) jouerSon(gagnant === VOUS ? 'victoire' : 'defaite');
+  }, [gagnant]);
 
   if (decompte) {
     return (

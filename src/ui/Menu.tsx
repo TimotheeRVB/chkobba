@@ -12,6 +12,7 @@ import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 import { JEUX } from './jeux/registre';
 import type { NomTheme } from './Carte';
 import { PALETTE } from './theme';
+import { basculerSons, sonsActifs } from '../sons';
 
 export function BoutonMenu({ onPress }: { onPress: () => void }) {
   return (
@@ -42,6 +43,8 @@ export function Menu({
   onFermer: () => void;
   onQuitter?: () => void;
 }) {
+  const [son, setSon] = useState(sonsActifs());
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onFermer}>
       <Pressable style={styles.voile} onPress={onFermer}>
@@ -69,6 +72,12 @@ export function Menu({
               Déposez vos fichiers dans src/ui/jeux/ pour en ajouter d'autres.
             </Text>
           )}
+
+          <Text style={[styles.titre, styles.titreSecond]}>Son</Text>
+          <Pressable style={styles.ligne} onPress={() => setSon(basculerSons())}>
+            <Text style={styles.nom}>Effets sonores</Text>
+            <Text style={son ? styles.coche : styles.croix}>{son ? '✓' : '—'}</Text>
+          </Pressable>
 
           {onQuitter && (
             <Pressable style={styles.quitter} onPress={onQuitter}>
@@ -116,6 +125,7 @@ const styles = StyleSheet.create({
     borderColor: PALETTE.laitonPale,
     backgroundColor: PALETTE.tapisFonce,
   },
+  titreSecond: { marginTop: 14 },
   titre: {
     color: PALETTE.sable,
     fontSize: 11,
@@ -136,6 +146,7 @@ const styles = StyleSheet.create({
   nom: { color: PALETTE.ivoire, fontSize: 15 },
   nomActif: { color: PALETTE.laiton, fontWeight: '500' },
   coche: { color: PALETTE.laiton, fontSize: 15 },
+  croix: { color: PALETTE.sable, fontSize: 15 },
   aide: {
     color: PALETTE.sable,
     fontSize: 12,

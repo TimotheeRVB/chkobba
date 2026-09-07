@@ -11,6 +11,7 @@ import { ActivityIndicator, StyleSheet, Text } from 'react-native';
 
 import { usePartieEnLigne } from '../reseau/connexion';
 import { Tapis } from './Tapis';
+import { jouerSon } from '../sons';
 import { Bouton, FeuilleDecompte, Panneau } from './communs';
 import type { NomTheme } from './Carte';
 import { PALETTE } from './theme';
@@ -49,7 +50,10 @@ export default function EcranEnLigne({ adresse, code, theme, onTheme, onQuitter 
 
   useEffect(() => {
     if (!decompte) return setDecompteMontre(false);
-    const minuteur = setTimeout(() => setDecompteMontre(true), 2300);
+    const minuteur = setTimeout(() => {
+      jouerSon('finDonne');
+      setDecompteMontre(true);
+    }, 2300);
     return () => clearTimeout(minuteur);
   }, [decompte]);
 
@@ -94,6 +98,12 @@ export default function EcranEnLigne({ adresse, code, theme, onTheme, onQuitter 
       </Panneau>
     );
   }
+
+  useEffect(() => {
+    if (gagnant !== null && vue) {
+      jouerSon(gagnant === vue.moi ? 'victoire' : 'defaite');
+    }
+  }, [gagnant]);
 
   if (abandon !== null) {
     return (

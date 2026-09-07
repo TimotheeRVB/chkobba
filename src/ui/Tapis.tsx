@@ -32,6 +32,7 @@ import {
 import { PALETTE } from './theme';
 import Zellige from './Zellige';
 import { BoutonMenu, Menu } from './Menu';
+import { jouerSon } from '../sons';
 
 const cle = (c: Carte) => `${c.couleur}-${c.valeur}`;
 const memeCarte = (a: Carte, b: Carte) => a.couleur === b.couleur && a.valeur === b.valeur;
@@ -57,6 +58,7 @@ const PAUSE_MS = 340;
 const RAMASSAGE_MS = 420;
 const BALAYAGE_MS = 460;
 const DEPOT_MS = 300;
+const DISTRIBUTION_MS = 560;
 
 /** Gabarit repris de Carte.tsx : une seule source pour tous les calculs. */
 const HAUTEUR_CARTE = CARTE_HAUTEUR;
@@ -467,6 +469,88 @@ export function Tapis({
     setPlaces((p) => (p[i]?.x === x && p[i]?.y === y ? p : { ...p, [i]: { x, y } }));
   };
 
+  /**
+   * Les sons suivent les phases de l'animation, jamais l'état du moteur.
+   *
+   * Le moteur a déjà tout appliqué au moment où la vue arrive : jouer le son
+   * à ce moment-là le décalerait d'une bonne seconde par rapport à ce que
+   * l'écran montre.
+   */
+  useEffect(() => {
+    if (!sequence) return;
+    if (sequence.phase === 'depot' && sequence.prise.length === 0) jouerSon('poser');
+    if (sequence.phase === 'ramassage') jouerSon('prendre');
+    if (sequence.phase === 'balayage') jouerSon('prendre');
+  }, [sequence?.phase]);
+
+  /**
+   * L'arrivée de nouvelles cartes en main.
+   *
+   * Le moteur redistribue dès que les deux mains sont vides ; l'affichage,
+   * lui, l'a retenu jusqu'à la fin de l'animation. C'est donc au moment où la
+   * main affichée se regarnit que la distribution devient visible — et c'est
+   * là que le son et le mouvement doivent se produire.
+   */
+  const distribution = useRef(new Animated.Value(1)).current;
+  const tailleMainAvant = useRef(mainAffichee.length);
+
+  useEffect(() => {
+    if (mainAffichee.length > tailleMainAvant.current) {
+      jouerSon('distribuer');
+      distribution.setValue(0);
+      Animated.timing(distribution, {
+        toValue: 1,
+        duration: DISTRIBUTION_MS,
+        useNativeDriver: true,
+      }).start();
+    }
+    tailleMainAvant.current = mainAffichee.length;
+  }, [mainAffichee.length]);
+
+  /**
+   * Entrée en scène d'une carte distribuée.
+   *
+   * Une seule valeur animée pilote les trois cartes : le décalage des plages
+   * d'interpolation suffit à les faire arriver l'une après l'autre.
+   */
+  const arrivee = (rang: number, depuisLeHaut: boolean) => {
+    const debut = rang * 0.16;
+    const options = { extrapolate: 'clamp' as const };
+    const distance = depuisLeHaut ? -110 : 110;
+
+    return {
+      opacity: distribution.interpolate({
+        inputRange: [debut, debut + 0.35],
+        outputRange: [0, 1],
+        ...options,
+      }),
+      transform: [
+        {
+          translateY: distribution.interpolate({
+            inputRange: [debut, debut + 0.55],
+            outputRange: [distance, 0],
+            ...options,
+          }),
+        },
+        {
+          scale: distribution.interpolate({
+            inputRange: [debut, debut + 0.55],
+            outputRange: [0.8, 1],
+            ...options,
+          }),
+        },
+      ],
+    };
+  };
+
+  // Une chkobba se reconnaît à l'incrément du compteur.
+  const chkobbasAvant = useRef(vue.chkobbas[0] + vue.chkobbas[1]);
+  useEffect(() => {
+    const total = vue.chkobbas[0] + vue.chkobbas[1];
+    if (total > chkobbasAvant.current) jouerSon('chkobba');
+    chkobbasAvant.current = total;
+  }, [vue.chkobbas]);
+
   const emplacementsTable = useEmplacements(cartesAffichees, EMPLACEMENTS_TABLE);
   const emplacementsMain = useEmplacements(mainAffichee, EMPLACEMENTS_MAIN);
 
@@ -650,7 +734,9 @@ export function Tapis({
       <View style={[styles.rangee, styles.rangeeMain]}>
         {Array.from({ length: EMPLACEMENTS_MAIN }).map((_, i) =>
           i < cartesAdversaire ? (
-            <DosDeCarte key={`dos-${i}`} theme={theme} />
+            <Animated.View key={`dos-${i}`} style={arrivee(i, false)}>
+              <DosDeCarte theme={theme} />
+            </Animated.View>
           ) : (
             <View key={`vide-${i}`} style={styles.emplacement} />
           ),
@@ -659,9 +745,9 @@ export function Tapis({
 
       <Text style={styles.annonce} numberOfLines={1}>
         {vue.dernierCoup && vue.dernierCoup.joueur === lui
-          ? `a joué ${nomCarte(vue.dernierCoup.carte, theme)}` +
+          ? `a joué ${nomCarte(vue.dernierCoup.carte)}` +
             (vue.dernierCoup.prise.length > 0
-              ? ` et pris ${vue.dernierCoup.prise.map((c) => nomCarte(c, theme)).join(' + ')}`
+              ? ` et pris ${vue.dernierCoup.prise.map(nomCarte).join(' + ')}`
               : ' sans prendre')
           : ' '}
       </Text>
@@ -796,7 +882,7 @@ export function Tapis({
       {choisie && options.length > 1 && !sequence && (
         <View style={styles.choix}>
           <Text style={styles.choixTitre}>
-            Avec le {nomCarte(choisie, theme)}, vous pouvez prendre :
+            Avec le {nomCarte(choisie)}, vous pouvez prendre :
           </Text>
           <View style={styles.rangee}>
             {options.map((prise, i) => (
@@ -806,7 +892,7 @@ export function Tapis({
                 onPress={() => jouer({ carte: choisie, prise })}
               >
                 <Text style={styles.texteOption}>
-                  {prise.map((c) => nomCarte(c, theme)).join(' + ')}
+                  {prise.map(nomCarte).join(' + ')}
                 </Text>
               </Pressable>
             ))}
@@ -822,7 +908,7 @@ export function Tapis({
       >
         {emplacementsMain.map((c, i) =>
           c ? (
-            <View key={cle(c)} onLayout={noterPlaceMain(i)}>
+            <Animated.View key={cle(c)} onLayout={noterPlaceMain(i)} style={arrivee(i, true)}>
               <CarteVue
                 carte={c}
                 theme={theme}
@@ -833,7 +919,7 @@ export function Tapis({
                     : undefined
                 }
               />
-            </View>
+            </Animated.View>
           ) : (
             <View
               key={`vide-${i}`}

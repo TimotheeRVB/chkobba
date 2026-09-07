@@ -112,3 +112,16 @@ export async function ecrireDernierePartie(code: string): Promise<void> {
 export async function oublierDernierePartie(): Promise<void> {
   await effacer(CLE_PARTIE);
 }
+
+/* --- Son --- */
+
+const CLE_SON = 'chkobba.son';
+
+export async function lireSonActif(): Promise<boolean | null> {
+  const valeur = await lire(CLE_SON);
+  return valeur === null ? null : valeur === 'oui';
+}
+
+export async function ecrireSonActif(actif: boolean): Promise<void> {
+  await ecrire(CLE_SON, actif ? 'oui' : 'non');
+}

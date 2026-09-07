@@ -12,6 +12,7 @@ import EcranSolo from './src/ui/EcranSolo';
 import EcranEnLigne from './src/ui/EcranEnLigne';
 import type { NomTheme } from './src/ui/Carte';
 import { ecrireDernierePartie, ecrireTheme, lireTheme } from './src/stockage';
+import { preparerSons } from './src/sons';
 
 type Ecran = { nom: 'accueil' } | { nom: 'solo' } | { nom: 'enligne'; code: string };
 
@@ -36,6 +37,11 @@ export default function App() {
     });
 
     return () => abonnement.remove();
+  }, []);
+
+  // Les lecteurs sont créés une fois, au lancement.
+  useEffect(() => {
+    void preparerSons();
   }, []);
 
   // L'habillage choisi est retenu d'une session à l'autre.
